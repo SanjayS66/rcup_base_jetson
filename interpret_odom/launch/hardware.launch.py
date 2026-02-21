@@ -30,7 +30,7 @@ def generate_launch_description():
     
     tf_laser = Node(
         package='tf2_ros', executable='static_transform_publisher',
-        arguments=['--x', '0.385', '--y', '0', '--z', '0.08', '--yaw', '0', '--pitch', '0', '--roll', '0', 
+        arguments=['--x', '0.385', '--y', '0', '--z', '-0.027', '--yaw', '0', '--pitch', '0', '--roll', '0', 
                    '--frame-id', 'base_link', '--child-frame-id', 'laser']
     )
 
@@ -69,12 +69,28 @@ def generate_launch_description():
         arguments=['-d', rviz_config_dir]
     )
 
+
+
     return LaunchDescription([
         SetEnvironmentVariable('RCUTILS_LOGGING_BUFFERED_STREAM', '1'),
         lidar_node,
         filter_node,
         tf_footprint,
         tf_laser,
-                
-        rviz_node
+        Node(
+
+            package='foxglove_bridge',
+
+            executable='foxglove_bridge',
+
+            name='foxglove_bridge',
+
+            parameters=[{
+
+                'port': 8765,
+
+            }]
+
+        )                
+#        rviz_node
     ])

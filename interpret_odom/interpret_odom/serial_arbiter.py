@@ -16,7 +16,7 @@ class SerialArbiter(Node):
         self.declare_parameter('enc_port', '/dev/stm_encoder_usb')
         self.declare_parameter('baud', 115200)
         self.declare_parameter('out_topic', 'mcu/in')
-        self.declare_parameter('dual_mcu', False)
+        self.declare_parameter('dual_mcu', True)
 
         self.imu_port = self.get_parameter('imu_port').value
         self.enc_port = self.get_parameter('enc_port').value
@@ -24,7 +24,7 @@ class SerialArbiter(Node):
         self.out_topic = self.get_parameter('out_topic').value
         self.dual_mcu = self.get_parameter('dual_mcu').value
 
-        self.get_logger().info(f"!!! ARBITER LOADED (Dual Mode: {self.dual_mcu}) !!!")
+        self.get_logger().info(f"Arbiter Loaded (Dual Mode: {self.dual_mcu})")
 
         # -------- State --------
         self.imu_ser = None
@@ -46,73 +46,132 @@ class SerialArbiter(Node):
 
     def _open_serial(self, port):
         try:
+            # 0.2s timeout prevents readline() from blocking forever if cable drops
             ser = serial.Serial(port, self.baud, timeout=0.2)
             time.sleep(0.5)
             ser.reset_input_buffer()
-            self.get_logger().info(f"Opened {port}")
+            self.get_logger().info(f"Successfully opened {port}")
             return ser
         except Exception as e:
             self.get_logger().error(f"Failed to open {port}: {e}")
             return None
 
     def _send_stop(self, ser_obj):
-        """Helper to send 0 PWM command."""
         if ser_obj and ser_obj.is_open:
             try:
                 stop_msg = '{"pwm1": 0, "pwm2": 0, "pwm3": 0, "pwm4": 0}\n'
                 ser_obj.write(stop_msg.encode())
                 ser_obj.flush()
                 time.sleep(0.1)
-                self.get_logger().info(">> ZERO PWM command sent.")
+                self.get_logger().info("Zero PWM command sent.")
             except Exception as e:
                 self.get_logger().warn(f"Failed to send zero PWM: {e}")
 
     def cb_out(self, msg: String):
         payload = msg.data if msg.data.endswith("\n") else msg.data + "\n"
-        target_ser = self.enc_ser
+        with self.lock:
+            target_ser = self.enc_ser
+            
         if target_ser and target_ser.is_open:
             try:
                 target_ser.write(payload.encode())
                 target_ser.flush()
-            except Exception as e:
-                self.get_logger().warn(f"Serial write failed: {e}")
+            except serial.SerialException as e:
+                self.get_logger().error(f"Write failed, dropping connection: {e}")
+                # Force close so the read thread triggers a reconnect
+                with self.lock:
+                    self.enc_ser.close()
+                    self.enc_ser = None
 
     def _imu_reader(self):
-        self.imu_ser = self._open_serial(self.imu_port)
-        while self.running and self.imu_ser:
+        last_rx_time = time.time()
+        while self.running:
+            with self.lock:
+                current_ser = self.imu_ser
+
+            if not current_ser or not current_ser.is_open:
+                time.sleep(1.0)
+                new_ser = self._open_serial(self.imu_port)
+                with self.lock:
+                    self.imu_ser = new_ser
+                if new_ser:
+                    last_rx_time = time.time()
+                continue
+
             try:
-                line = self.imu_ser.readline().decode(errors='ignore').strip()
+                line = current_ser.readline().decode(errors='ignore').strip()
+                
+                # Check for dead connection
+                if not line:
+                    if time.time() - last_rx_time > 2.0:
+                        self.get_logger().warn("IMU timeout. Forcing reconnect...")
+                        with self.lock:
+                            self.imu_ser.close()
+                            self.imu_ser = None
+                    continue
+
+                last_rx_time = time.time()
                 if "{" not in line: continue
                 data = json.loads(line[line.find("{"):])
+                
                 with self.lock:
                     self.latest_imu = data
                 self._try_publish()
-            except Exception:
-                time.sleep(1.0)
-                if not self.imu_ser or not self.imu_ser.is_open:
-                     self.imu_ser = self._open_serial(self.imu_port)
+
+            except (serial.SerialException, OSError) as e:
+                self.get_logger().error(f"IMU Serial Error: {e}")
+                with self.lock:
+                    if self.imu_ser:
+                        self.imu_ser.close()
+                        self.imu_ser = None
+            except json.JSONDecodeError:
+                pass # Ignore malformed partial strings
 
     def _enc_reader(self):
-        self.enc_ser = self._open_serial(self.enc_port)
+        last_rx_time = time.time()
         
-        # --- SEND 0 PWM ON INIT ---
-        self._send_stop(self.enc_ser)
-        # --------------------------
+        while self.running:
+            with self.lock:
+                current_ser = self.enc_ser
 
-        while self.running and self.enc_ser:
+            if not current_ser or not current_ser.is_open:
+                time.sleep(1.0)
+                new_ser = self._open_serial(self.enc_port)
+                with self.lock:
+                    self.enc_ser = new_ser
+                if new_ser:
+                    self._send_stop(new_ser)
+                    last_rx_time = time.time()
+                continue
+
             try:
-                line = self.enc_ser.readline().decode(errors='ignore').strip()
+                line = current_ser.readline().decode(errors='ignore').strip()
+                
+                # Check for dead connection
+                if not line:
+                    if time.time() - last_rx_time > 2.0:
+                        self.get_logger().warn("Encoder timeout. Forcing reconnect...")
+                        with self.lock:
+                            self.enc_ser.close()
+                            self.enc_ser = None
+                    continue
+
+                last_rx_time = time.time()
                 if "{" not in line: continue
                 data = json.loads(line[line.find("{"):])
+                
                 with self.lock:
                     self.latest_enc = data
                 self._try_publish()
-            except Exception:
-                time.sleep(1.0)
-                if not self.enc_ser or not self.enc_ser.is_open:
-                     self.enc_ser = self._open_serial(self.enc_port)
-                     # Optional: Send stop on reconnect as well
-                     self._send_stop(self.enc_ser)
+
+            except (serial.SerialException, OSError) as e:
+                self.get_logger().error(f"Encoder Serial Error: {e}")
+                with self.lock:
+                    if self.enc_ser:
+                        self.enc_ser.close()
+                        self.enc_ser = None
+            except json.JSONDecodeError:
+                pass # Ignore malformed partial strings
 
     def _try_publish(self):
         with self.lock:
@@ -121,10 +180,12 @@ class SerialArbiter(Node):
             if self.dual_mcu and self.latest_imu is None:
                 return
 
-            merged = {**self.latest_enc}
+            merged = {}
             if self.dual_mcu and self.latest_imu:
                 merged.update(self.latest_imu)
-           
+
+            # Overwrites collisions with strongest source (Encoders)
+            merged.update(self.latest_enc)
             merged["timestamp"] = time.time()
 
         msg = String()
@@ -135,12 +196,11 @@ class SerialArbiter(Node):
         self.get_logger().info("Shutting down... sending EMERGENCY STOP to MCU.")
         self.running = False
        
-        # --- SAFETY SHUTDOWN LOGIC ---
-        self._send_stop(self.enc_ser)
-        # -----------------------------
-
-        for s in [self.imu_ser, self.enc_ser]:
-            if s and s.is_open: s.close()
+        with self.lock:
+            self._send_stop(self.enc_ser)
+            for s in [self.imu_ser, self.enc_ser]:
+                if s and s.is_open: 
+                    s.close()
        
         super().destroy_node()
 

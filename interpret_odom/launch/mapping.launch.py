@@ -18,7 +18,7 @@ def generate_launch_description():
     )
     
     map_file_arg = DeclareLaunchArgument(
-        'map_file', default_value='/home/yash/rcup_maps/myserialmap',
+        'map_file', default_value='/home/rm/rcup_testing_maps/mymap',
         description='Path to serialized map file (no extension) for localization'
     )
 
@@ -51,9 +51,8 @@ def generate_launch_description():
                 'use_sim_time': False,
                 'mode': 'localization',
                 'map_file_name': LaunchConfiguration('map_file'),
-                'map_start_pose': [0.0, 0.0, 0.0] # Uncomment if you need a specific start pose
-                ,'map_start_at_dock': True
-            }
+		'map_start_pose': [0.0, 0.0, 0.0]  # Added quotes around the ke           
+ }
         ]
     )
 

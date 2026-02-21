@@ -23,9 +23,15 @@ class CmdvelToMcu(Node):
         self.declare_parameter('cmd_vel_in_topic', 'cmd_vel_out')
         self.declare_parameter('mcu_out_topic', 'mcu/out')
         
-        self.declare_parameter('brake_duration', 0.30)     #in seconds
-        self.declare_parameter('brake_pwm', 20)           # Standard brake PWM
-        self.declare_parameter('brake_pwm_rotation', 13)  # Smaller brake PWM for point turns
+        # --- DYNAMIC BRAKING PARAMETERS ---
+        self.declare_parameter('brake_duration_normal', 0.32)   # Duration for linear
+        self.declare_parameter('brake_duration_rotation', 0.17) # Duration for turns
+        
+        self.declare_parameter('brake_scale_normal', 0.8)   
+        self.declare_parameter('brake_scale_rotation', 0.3) 
+        
+        self.declare_parameter('brake_min_pwm', 15)         
+        self.declare_parameter('brake_max_pwm', 30)         
 
         # Load Params
         self.L = float(self.get_parameter('wheel_L').get_parameter_value().double_value)
@@ -37,9 +43,14 @@ class CmdvelToMcu(Node):
         self.min_normal = int(self.get_parameter('min_pwm_threshold_normal').get_parameter_value().integer_value)
         self.min_strafe = int(self.get_parameter('min_pwm_threshold_strafe').get_parameter_value().integer_value)
         
-        self.brake_duration = float(self.get_parameter('brake_duration').get_parameter_value().double_value)
-        self.brake_pwm = int(self.get_parameter('brake_pwm').get_parameter_value().integer_value)
-        self.brake_pwm_rotation = int(self.get_parameter('brake_pwm_rotation').get_parameter_value().integer_value)
+        # Load Brake Durations
+        self.brake_dur_normal = float(self.get_parameter('brake_duration_normal').get_parameter_value().double_value)
+        self.brake_dur_rotation = float(self.get_parameter('brake_duration_rotation').get_parameter_value().double_value)
+        
+        self.brake_scale_normal = float(self.get_parameter('brake_scale_normal').get_parameter_value().double_value)
+        self.brake_scale_rotation = float(self.get_parameter('brake_scale_rotation').get_parameter_value().double_value)
+        self.brake_min = int(self.get_parameter('brake_min_pwm').get_parameter_value().integer_value)
+        self.brake_max = int(self.get_parameter('brake_max_pwm').get_parameter_value().integer_value)
 
         cmd_topic = self.get_parameter('cmd_vel_in_topic').get_parameter_value().string_value
         mcu_out_topic = self.get_parameter('mcu_out_topic').get_parameter_value().string_value
@@ -51,25 +62,19 @@ class CmdvelToMcu(Node):
         self.current_pwms = [0, 0, 0, 0] 
         self.last_moving_pwms = [0, 0, 0, 0] 
 
-        # Braking State Variables
         self.is_braking = False
         self.brake_start_time = 0.0
-        self.active_brake_pwm = 0            # NEW: Stores the PWM to be used for the current braking session
-        self.last_motion_was_rotation = False # NEW: Tracks if the previous move was a point turn
+        self.active_brake_pwm = 0            
+        self.active_brake_duration = 0.0     # Dynamic duration
+        self.last_motion_was_rotation = False 
 
-        # High frequency timer for braking and idle logic
         self.create_timer(0.05, self._control_loop)
         
-        self.get_logger().info(f"Active. Rotation-Aware Braking Enabled (Std: {self.brake_pwm}, Rot: {self.brake_pwm_rotation})")
+        self.get_logger().info("Active. Dynamic Multi-Factor Braking Enabled.")
         self.send_pwm([0,0,0,0])
 
     def send_pwm(self, pwms):
-        msg = {
-            "pwm1": int(pwms[0]),
-            "pwm2": int(pwms[1]),
-            "pwm3": int(pwms[2]),
-            "pwm4": int(pwms[3])
-        }
+        msg = {"pwm1": int(pwms[2]) , "pwm2": int(pwms[1]), "pwm3": int(pwms[0]), "pwm4": -int(pwms[3])}
         out = String()
         out.data = json.dumps(msg)
         self.pub_mcu_out.publish(out)
@@ -77,123 +82,101 @@ class CmdvelToMcu(Node):
     def cb_cmdvel(self, msg: Twist):
         self.last_cmd_time = time.time()
         
+        # 1. Read raw inputs using standard ROS coordinates (No inverted signs)
         raw_vx = float(msg.linear.x)
         raw_vy = float(msg.linear.y)
-        wz = -float(msg.angular.z)
+        wz = float(msg.angular.z)
 
+        # Calculate strafe ratio to apply dynamic gains
         total_linear_mag = abs(raw_vx) + abs(raw_vy)
         strafe_ratio = abs(raw_vy) / total_linear_mag if total_linear_mag >= 0.05 else 0.0
-        current_vy_gain = 1.0 + (strafe_ratio * (self.strafe_gain - 1.0))
         
+        # Apply strafe gain to Y axis
         vx = raw_vx
-        vy = raw_vy * current_vy_gain
+        vy = raw_vy * (1.0 + (strafe_ratio * (self.strafe_gain - 1.0)))
         geom = self.L + self.W
         
+        # 2. Standard Mecanum Kinematics
+        # Order: [Front-Left, Front-Right, Rear-Left, Rear-Right]
         target_speeds_ms = [
-            vx - vy - wz * geom,
-            vx + vy + wz * geom,
-            vx + vy - wz * geom,
-            vx - vy + wz * geom
+            vx - vy - wz * geom,  # Index 0: FL
+            vx + vy + wz * geom,  # Index 1: FR
+            vx + vy - wz * geom,  # Index 2: RL
+            vx - vy + wz * geom   # Index 3: RR
         ]
 
+        # Calculate dynamic PWM thresholds based on strafing
         active_min_pwm = self.min_normal + (strafe_ratio * (self.min_strafe - self.min_normal))
-        normal_max = self.max_pwm
-        strafe_max = self.max_pwm * self.strafe_gain
-        active_max_pwm = normal_max + (strafe_ratio * (strafe_max - normal_max))
+        active_max_pwm = self.max_pwm + (strafe_ratio * ((self.max_pwm * self.strafe_gain) - self.max_pwm))
         NAV2_MAX_SPEED_MS = 0.09 
 
         target_pwms = []
         is_moving_command = False
 
+        # 3. Convert target speeds to PWM values
         for speed_ms in target_speeds_ms:
             abs_speed = abs(speed_ms)
-            if abs_speed < 0.01: 
+            if abs_speed < 0.01:
                 target_pwms.append(0)
                 continue
             
             is_moving_command = True
-            if abs_speed < 0.02: abs_speed = 0.02
-
-            speed_ratio = (abs_speed - 0.02) / (NAV2_MAX_SPEED_MS - 0.02)
-            speed_ratio = max(0.0, min(1.0, speed_ratio))
             
-            pwm_range = active_max_pwm - active_min_pwm
-            pwm_mag = active_min_pwm + (speed_ratio * pwm_range)
+            # Map speed to PWM range
+            speed_ratio = max(0.0, min(1.0, (max(0.02, abs_speed) - 0.02) / (NAV2_MAX_SPEED_MS - 0.02)))
+            pwm_mag = active_min_pwm + (speed_ratio * (active_max_pwm - active_min_pwm))
             
-            final_pwm = int(pwm_mag) if speed_ms > 0 else -int(pwm_mag)
-            target_pwms.append(final_pwm)
+            # Reapply the sign (direction)
+            target_pwms.append(int(pwm_mag) if speed_ms > 0 else -int(pwm_mag))
 
-        while len(target_pwms) < 4: target_pwms.append(0)
+        # Ensure the array always has exactly 4 elements
+        while len(target_pwms) < 4: 
+            target_pwms.append(0)
 
-        # --- MOTION TYPE TRACKING ---
+        # 4. Command the motors or trigger braking
         if is_moving_command:
-            # Detect if this is a point turn (no linear, yes angular)
-            if abs(raw_vx) < 0.02 and abs(raw_vy) < 0.02 and abs(wz) > 0.01:
-                self.last_motion_was_rotation = True
-            else:
-                self.last_motion_was_rotation = False
-
-            # Cancel braking if we get a new move command
-            if self.is_braking:
-                self.is_braking = False
-
-            self.current_pwms = [
-                -target_pwms[1], 
-                target_pwms[2],
-                target_pwms[0],
-                -target_pwms[3]
-            ]
-            self.send_pwm(self.current_pwms)
-
-        # --- BRAKING LOGIC ---
-        else:
-            was_moving = any(abs(p) > 0 for p in self.current_pwms)
+            self.last_motion_was_rotation = (abs(raw_vx) < 0.02 and abs(raw_vy) < 0.02 and abs(wz) > 0.01)
             
-            if was_moving and not self.is_braking:
-                self.is_braking = True
-                self.brake_start_time = time.time()
-                self.last_moving_pwms = self.current_pwms
-                
-                # Assign brake strength based on last motion
-                if self.last_motion_was_rotation:
-                    self.active_brake_pwm = self.brake_pwm_rotation
-                    self.get_logger().info(f"Braking: Rotation Mode (PWM {self.active_brake_pwm})")
-                else:
-                    self.active_brake_pwm = self.brake_pwm
-                    self.get_logger().info(f"Braking: Standard Mode (PWM {self.active_brake_pwm})")
+            if self.is_braking: 
+                self.is_braking = False
+            
+            # Pass the clean array directly without shuffling indices
+            self.current_pwms = target_pwms 
+            self.send_pwm(self.current_pwms)
+        else:
+            self.trigger_brake()
+
+    def trigger_brake(self):
+        was_moving = any(abs(p) > 0 for p in self.current_pwms)
+        if was_moving and not self.is_braking:
+            self.is_braking = True
+            self.brake_start_time = time.time()
+            self.last_moving_pwms = self.current_pwms
+            
+            max_prev = max([abs(p) for p in self.last_moving_pwms])
+            
+            if self.last_motion_was_rotation:
+                factor = self.brake_scale_rotation
+                self.active_brake_duration = self.brake_dur_rotation
+            else:
+                factor = self.brake_scale_normal
+                self.active_brake_duration = self.brake_dur_normal
+            
+            self.active_brake_pwm = max(self.brake_min, min(self.brake_max, int(max_prev * factor)))
+            self.get_logger().info(f"Brake: Force={self.active_brake_pwm}, Dur={self.active_brake_duration}")
 
     def _control_loop(self):
-        # 1. Handle Active Braking
         if self.is_braking:
-            elapsed = time.time() - self.brake_start_time
-            if elapsed < self.brake_duration:
-                brake_pwms = []
-                for p in self.last_moving_pwms:
-                    if p > 0: brake_pwms.append(-self.active_brake_pwm)
-                    elif p < 0: brake_pwms.append(self.active_brake_pwm)
-                    else: brake_pwms.append(0)
+            if (time.time() - self.brake_start_time) < self.active_brake_duration:
+                brake_pwms = [(-self.active_brake_pwm if p > 0 else self.active_brake_pwm if p < 0 else 0) for p in self.last_moving_pwms]
                 self.send_pwm(brake_pwms)
             else:
                 self.is_braking = False
                 self.current_pwms = [0,0,0,0]
                 self.send_pwm([0,0,0,0])
-                self.get_logger().info("Braking Complete. Stopped.")
-
-        # 2. Handle Idle/Timeout (Joystick release)
         elif self.last_cmd_time is not None:
              if (time.time() - self.last_cmd_time) > self.idle_timeout:
-                was_moving = any(abs(p) > 0 for p in self.current_pwms)
-                
-                if was_moving:
-                    self.is_braking = True
-                    self.brake_start_time = time.time()
-                    self.last_moving_pwms = self.current_pwms
-                    # For safety, assume standard brake on timeout unless already flagged
-                    self.active_brake_pwm = self.brake_pwm_rotation if self.last_motion_was_rotation else self.brake_pwm
-                    self.get_logger().warn("Timeout: Applying Emergency Brake")
-                else:
-                    self.send_pwm([0,0,0,0])
-                
+                self.trigger_brake()
                 self.last_cmd_time = None
 
 def main(args=None):

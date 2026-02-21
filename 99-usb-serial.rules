@@ -10,7 +10,7 @@
 SUBSYSTEM=="tty", ATTRS{serial}=="3161354C3034", SYMLINK+="stm_encoder_usb"
 
 # imu stm
-SUBSYSTEM=="tty", ATTRS{serial}=="318A388D3533", SYMLINK+="stm_imu_usb"
+SUBSYSTEM=="tty", ATTRS{serial}=="3197354C3034", SYMLINK+="stm_imu_usb"
 
 
 # lidar

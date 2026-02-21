@@ -26,7 +26,7 @@ class JoyToCmdVelJoy(Node):
         self.declare_parameter('cmd_vel_topic', '/cmd_vel_joy')
         self.declare_parameter('axis_vx', 1)
         self.declare_parameter('axis_vy', 0)
-        self.declare_parameter('axis_wz', 3)
+        self.declare_parameter('axis_wz', 2)
         self.declare_parameter('scale_vx', 1.0)
         self.declare_parameter('scale_vy', 1.0)
         self.declare_parameter('scale_wz', 1.0)

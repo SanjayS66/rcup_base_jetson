@@ -72,5 +72,5 @@ def generate_launch_description():
         twist_mux_node,
         cmd_vel_to_pwm_node,
         serial_arbiter_node,
-        # ekf_node
+        ekf_node
     ])
