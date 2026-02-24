@@ -29,8 +29,11 @@ class SerialArbiter(Node):
         # -------- State --------
         self.imu_ser = None
         self.enc_ser = None
-        self.latest_imu = None
-        self.latest_enc = None
+        
+        # Use persistent state dictionaries instead of None flags
+        self.state_imu = {}
+        self.state_enc = {}
+        
         self.lock = Lock()
         self.running = True
 
@@ -46,7 +49,6 @@ class SerialArbiter(Node):
 
     def _open_serial(self, port):
         try:
-            # 0.2s timeout prevents readline() from blocking forever if cable drops
             ser = serial.Serial(port, self.baud, timeout=0.2)
             time.sleep(0.5)
             ser.reset_input_buffer()
@@ -63,9 +65,8 @@ class SerialArbiter(Node):
                 ser_obj.write(stop_msg.encode())
                 ser_obj.flush()
                 time.sleep(0.1)
-                self.get_logger().info("Zero PWM command sent.")
             except Exception as e:
-                self.get_logger().warn(f"Failed to send zero PWM: {e}")
+                pass
 
     def cb_out(self, msg: String):
         payload = msg.data if msg.data.endswith("\n") else msg.data + "\n"
@@ -78,7 +79,6 @@ class SerialArbiter(Node):
                 target_ser.flush()
             except serial.SerialException as e:
                 self.get_logger().error(f"Write failed, dropping connection: {e}")
-                # Force close so the read thread triggers a reconnect
                 with self.lock:
                     self.enc_ser.close()
                     self.enc_ser = None
@@ -99,12 +99,15 @@ class SerialArbiter(Node):
                 continue
 
             try:
+                # Only flush if the buffer is actually backed up (prevents blocking)
+                if current_ser.in_waiting > 256:
+                    current_ser.reset_input_buffer()
+                    current_ser.readline() 
+                
                 line = current_ser.readline().decode(errors='ignore').strip()
                 
-                # Check for dead connection
                 if not line:
                     if time.time() - last_rx_time > 2.0:
-                        self.get_logger().warn("IMU timeout. Forcing reconnect...")
                         with self.lock:
                             self.imu_ser.close()
                             self.imu_ser = None
@@ -112,24 +115,21 @@ class SerialArbiter(Node):
 
                 last_rx_time = time.time()
                 if "{" not in line: continue
+                
                 data = json.loads(line[line.find("{"):])
                 
+                # Update persistent state
                 with self.lock:
-                    self.latest_imu = data
+                    self.state_imu = data
+                
+                # Publish immediately, don't wait for encoder
                 self._try_publish()
 
-            except (serial.SerialException, OSError) as e:
-                self.get_logger().error(f"IMU Serial Error: {e}")
-                with self.lock:
-                    if self.imu_ser:
-                        self.imu_ser.close()
-                        self.imu_ser = None
-            except json.JSONDecodeError:
-                pass # Ignore malformed partial strings
+            except (serial.SerialException, OSError, json.JSONDecodeError):
+                pass
 
     def _enc_reader(self):
         last_rx_time = time.time()
-        
         while self.running:
             with self.lock:
                 current_ser = self.enc_ser
@@ -145,12 +145,15 @@ class SerialArbiter(Node):
                 continue
 
             try:
+                # Only flush if the buffer is actually backed up
+                if current_ser.in_waiting > 256:
+                    current_ser.reset_input_buffer()
+                    current_ser.readline()
+                
                 line = current_ser.readline().decode(errors='ignore').strip()
                 
-                # Check for dead connection
                 if not line:
                     if time.time() - last_rx_time > 2.0:
-                        self.get_logger().warn("Encoder timeout. Forcing reconnect...")
                         with self.lock:
                             self.enc_ser.close()
                             self.enc_ser = None
@@ -158,63 +161,54 @@ class SerialArbiter(Node):
 
                 last_rx_time = time.time()
                 if "{" not in line: continue
+                
                 data = json.loads(line[line.find("{"):])
                 
+                # Update persistent state
                 with self.lock:
-                    self.latest_enc = data
+                    self.state_enc = data
+                
+                # Publish immediately, don't wait for IMU
                 self._try_publish()
 
-            except (serial.SerialException, OSError) as e:
-                self.get_logger().error(f"Encoder Serial Error: {e}")
-                with self.lock:
-                    if self.enc_ser:
-                        self.enc_ser.close()
-                        self.enc_ser = None
-            except json.JSONDecodeError:
-                pass # Ignore malformed partial strings
+            except (serial.SerialException, OSError, json.JSONDecodeError):
+                pass
 
     def _try_publish(self):
         with self.lock:
-            if self.latest_enc is None:
-                return
-            if self.dual_mcu and self.latest_imu is None:
+            # Require at least one initial message from required sensors to start
+            if not self.state_enc or (self.dual_mcu and not self.state_imu):
                 return
 
+            # Merge the latest known states of both sensors
             merged = {}
-            if self.dual_mcu and self.latest_imu:
-                merged.update(self.latest_imu)
-
-            # Overwrites collisions with strongest source (Encoders)
-            merged.update(self.latest_enc)
-            merged["timestamp"] = time.time()
+            if self.dual_mcu:
+                merged.update(self.state_imu)
+            merged.update(self.state_enc)
+            
+            # Note: We NO LONGER clear the states here. We keep caching them.
 
         msg = String()
         msg.data = json.dumps(merged)
         self.pub.publish(msg)
 
     def destroy_node(self):
-        self.get_logger().info("Shutting down... sending EMERGENCY STOP to MCU.")
         self.running = False
-       
         with self.lock:
             self._send_stop(self.enc_ser)
             for s in [self.imu_ser, self.enc_ser]:
                 if s and s.is_open: 
                     s.close()
-       
         super().destroy_node()
 
 def main(args=None):
     rclpy.init(args=args)
     node = SerialArbiter()
-    try:
-        rclpy.spin(node)
-    except KeyboardInterrupt:
-        pass
+    try: rclpy.spin(node)
+    except KeyboardInterrupt: pass
     finally:
         node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
+        if rclpy.ok(): rclpy.shutdown()
 
 if __name__ == '__main__':
     main()

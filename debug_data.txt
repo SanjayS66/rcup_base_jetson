@@ -1,0 +1,13 @@
+"""
+imu/data_raw 91-92hz
+/map 5hz
+/mcu/in 1000-1100hz
+/tf 91hz
+/odom 90-92hz
+/odometry/filtered 88-90hz
+/scan 10-11hz
+/scan_raw 10-12hz
+"""
+
+
+

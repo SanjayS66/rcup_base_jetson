@@ -5,6 +5,7 @@ tracking_dead_wheel_node.py -- IMU-Aided dead-wheel odometry.
 Updated to handle JSON format with timestamp 't'
 """
 
+
 import numpy as np
 
 if not hasattr(np, "float"):
@@ -93,21 +94,22 @@ class DeadWheelOdomNode(Node):
         imu_tf.transform.rotation.w = 1.0
         self.static_broadcaster.sendTransform(imu_tf)
 
-        self.create_subscription(String, 'mcu/in', self._mcu_line_cb, 40)
+        self.create_subscription(String, 'mcu/in', self._mcu_line_cb, 25)
         self.yaw_offset = None  
         
 
-    def _handle_sample(self, d_front_raw, d_left_raw, d_right_raw, mcu_t, imu_yaw_rad, ros_now):
+    def _handle_sample(self, d_front_raw, d_left_raw, d_right_raw, imu_yaw_rad, ros_now):
         ticks = np.array([d_front_raw, d_left_raw, d_right_raw], dtype=np.int64)
+        current_time_sec = ros_now.sec + ros_now.nanosec * 1e-9
         
         if self.prev_ticks is None:
             self.prev_ticks = ticks
-            self.prev_time = mcu_t
+            self.prev_time = current_time_sec
             self.yaw = imu_yaw_rad
             return True
 
-        # Calculate dt using the 't' parameter (assuming 't' is in milliseconds)
-        dt = (mcu_t - self.prev_time) / 1000.0
+        # Calculate dt using the global ROS clock
+        dt = current_time_sec - self.prev_time
         if dt <= 0:
             dt = 1e-3
 
@@ -150,6 +152,16 @@ class DeadWheelOdomNode(Node):
         odom.twist.twist.linear.x = body_dx / dt
         odom.twist.twist.linear.y = body_dy / dt
         odom.twist.twist.angular.z = imu_dtheta / dt
+
+        odom.pose.covariance = [1e-9] * 36
+        odom.pose.covariance[0] = 1e-5   # X translation (high confidence)
+        odom.pose.covariance[7] = 1e-5   # Y translation (high confidence)
+        odom.pose.covariance[35] = 1e-3  
+        odom.twist.covariance = [1e-9] * 36
+        odom.twist.covariance[0] = 1e-3   # vx
+        odom.twist.covariance[7] = 1e-3   # vy
+        odom.twist.covariance[35] = 1e-3  # vyaw
+
         self.odom_pub.publish(odom)
 
         t_odom = TransformStamped()
@@ -180,7 +192,7 @@ class DeadWheelOdomNode(Node):
         self.path_pub.publish(path_msg)
 
         self.prev_ticks = ticks
-        self.prev_time = mcu_t
+        self.prev_time = current_time_sec
         return True
 
     def _mcu_line_cb(self, msg: String):
@@ -191,7 +203,6 @@ class DeadWheelOdomNode(Node):
 
         ros_now = self.get_clock().now().to_msg()
 
-        mcu_t = float(data.get("t", 0.0))
 
         # 1. Get correct quaternions
 # 1. Get correct quaternions
@@ -230,6 +241,14 @@ class DeadWheelOdomNode(Node):
             imu_msg.linear_acceleration.y = float(data.get("ay", 0.0))
             imu_msg.linear_acceleration.z = float(data.get("az", 0.0))
 
+            imu_msg.orientation_covariance = [1e-9] * 9
+            imu_msg.orientation_covariance[8] = 1e-5  # Yaw orientation (high confidence)
+
+            imu_msg.angular_velocity_covariance = [1e-9] * 9
+            imu_msg.angular_velocity_covariance[8] = 1e-5  # Z angular velocity
+
+
+
             self.imu_pub.publish(imu_msg)
         except Exception as e:
             self.get_logger().warn(f"IMU pub error: {e}")
@@ -244,7 +263,7 @@ class DeadWheelOdomNode(Node):
             l = vals.get(self.input_map[1], 0)
             r = vals.get(self.input_map[2], 0)
 
-            self._handle_sample(f, l, r, mcu_t, yaw_rad, ros_now)
+            self._handle_sample(f, l, r, yaw_rad, ros_now)
         except Exception as e:
             self.get_logger().warn(f"Mapping error: {e}")
 

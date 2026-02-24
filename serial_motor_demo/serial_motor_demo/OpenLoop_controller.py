@@ -74,7 +74,7 @@ class CmdvelToMcu(Node):
         self.send_pwm([0,0,0,0])
 
     def send_pwm(self, pwms):
-        msg = {"pwm1": int(pwms[2]) , "pwm2": int(pwms[1]), "pwm3": int(pwms[0]), "pwm4": -int(pwms[3])}
+        msg = {"pwm1": int(pwms[2]) , "pwm2": -int(pwms[3]), "pwm3": int(pwms[0]), "pwm4": int(pwms[1])}
         out = String()
         out.data = json.dumps(msg)
         self.pub_mcu_out.publish(out)

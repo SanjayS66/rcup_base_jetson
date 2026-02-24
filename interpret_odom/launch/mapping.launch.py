@@ -8,9 +8,9 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     # --- 1. Directories & Configs ---
-    sll_dir = get_package_share_directory('sllidar_ros2')
-    slam_params_file = os.path.join(sll_dir, 'config', 'mapper_params_online_async.yaml')
-
+    int_dir = get_package_share_directory('interpret_odom')
+    slam_params_file = os.path.join(int_dir, 'config', 'mapper_params_online_async.yaml')
+    localization_params_file = os.path.join(int_dir, 'config', 'localization_params_online_async.yaml')
     # --- 2. Arguments ---
     mode_arg = DeclareLaunchArgument(
         'mode', default_value='mapping',
@@ -46,12 +46,12 @@ def generate_launch_description():
         name='slam_toolbox',
         output='screen',
         parameters=[
-            slam_params_file,
+            localization_params_file,
             {
                 'use_sim_time': False,
                 'mode': 'localization',
                 'map_file_name': LaunchConfiguration('map_file'),
-		'map_start_pose': [0.0, 0.0, 0.0]  # Added quotes around the ke           
+		# 'map_start_pose': [0.0, 0.0, 0.0]  # Added quotes around the ke           
  }
         ]
     )

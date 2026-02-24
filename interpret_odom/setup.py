@@ -11,7 +11,7 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
                 ('share/' + package_name + '/launch', ['launch/navigation_support_nodes.launch.py','launch/hardware.launch.py', 'launch/mapping.launch.py', 'launch/nav2_bringup_with_collision_monitor.launch.py']),
-        ('share/' + package_name + '/config', ['config/twist_mux.yaml', 'config/nav2_params.yaml', 'config/dead_wheel_w_imu.yaml', 'config/mapper_params_online_async.yaml', 'config/lidar_filter.yaml']),
+        ('share/' + package_name + '/config', ['config/twist_mux.yaml', 'config/nav2_params.yaml', 'config/dead_wheel_w_imu.yaml', 'config/mapper_params_online_async.yaml', 'config/lidar_filter.yaml', 'config/localization_params_online_async.yaml']),
     ],
     install_requires=['setuptools'],
     zip_safe=True,

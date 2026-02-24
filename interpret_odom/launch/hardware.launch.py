@@ -4,7 +4,7 @@ from launch import LaunchDescription
 from launch.actions import SetEnvironmentVariable
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
-
+from launch.actions import TimerAction
 def generate_launch_description():
     sll_dir = get_package_share_directory('sllidar_ros2')
 
@@ -69,7 +69,16 @@ def generate_launch_description():
         arguments=['-d', rviz_config_dir]
     )
 
-
+    foxglove_node = Node(
+        package='foxglove_bridge',
+        executable='foxglove_bridge',
+        name='foxglove_bridge',
+        parameters=[{
+            'port': 8765,
+            'max_qos_depth': 1000
+        }],
+        ros_arguments=['--log-level', 'ERROR']
+    )
 
     return LaunchDescription([
         SetEnvironmentVariable('RCUTILS_LOGGING_BUFFERED_STREAM', '1'),
@@ -77,20 +86,8 @@ def generate_launch_description():
         filter_node,
         tf_footprint,
         tf_laser,
-        Node(
-
-            package='foxglove_bridge',
-
-            executable='foxglove_bridge',
-
-            name='foxglove_bridge',
-
-            parameters=[{
-
-                'port': 8765,
-
-            }]
-
-        )                
-#        rviz_node
+        TimerAction(
+            period=3.0,  # 3 second delay
+            actions=[foxglove_node]
+        )
     ])
