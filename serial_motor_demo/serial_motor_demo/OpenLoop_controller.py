@@ -24,8 +24,8 @@ class CmdvelToMcu(Node):
         self.declare_parameter('mcu_out_topic', 'mcu/out')
         
         # --- DYNAMIC BRAKING PARAMETERS ---
-        self.declare_parameter('brake_duration_normal', 0.32)   # Duration for linear
-        self.declare_parameter('brake_duration_rotation', 0.17) # Duration for turns
+        self.declare_parameter('brake_duration_normal', 0.0)   # Duration for linear
+        self.declare_parameter('brake_duration_rotation', 0.0) # Duration for turns
         
         self.declare_parameter('brake_scale_normal', 0.8)   
         self.declare_parameter('brake_scale_rotation', 0.3) 

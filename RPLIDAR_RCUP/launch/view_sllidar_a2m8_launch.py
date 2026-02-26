@@ -1,88 +1,144 @@
+#!/usr/bin/env python3
+
 import os
+
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
-from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.actions import DeclareLaunchArgument
+from launch.actions import LogInfo
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
+
 def generate_launch_description():
-    # Define configurations
-    channel_type = LaunchConfiguration('channel_type', default='serial')
+    channel_type =  LaunchConfiguration('channel_type', default='serial')
     serial_port = LaunchConfiguration('serial_port', default='/dev/ttyUSB0')
     serial_baudrate = LaunchConfiguration('serial_baudrate', default='115200')
     frame_id = LaunchConfiguration('frame_id', default='laser')
-    inverted = LaunchConfiguration('inverted', default='true')
+    inverted = LaunchConfiguration('inverted', default='false')
     angle_compensate = LaunchConfiguration('angle_compensate', default='true')
-    scan_mode = LaunchConfiguration('scan_mode', default='Boost')
+    scan_mode = LaunchConfiguration('scan_mode', default='Standard')
 
     rviz_config_dir = os.path.join(
-        get_package_share_directory('sllidar_ros2'),
-        'rviz',
-        'sllidar_ros2_final.rviz'
-    )
+            get_package_share_directory('sllidar_ros2'),
+            'rviz',
+            'sllidar_ros2.rviz')
 
-    slam_toolbox_launch_file = os.path.join(
-        get_package_share_directory('sllidar_ros2'),
-        'launch',
-        'online_async_launch.py'
-    )
-
-    slam_params_file = os.path.join(
-        get_package_share_directory('sllidar_ros2'),
-        'config',
-        'mapper_params_online_async.yaml'
-    )
-
-    filter_config_file = os.path.join(
-        get_package_share_directory('sllidar_ros2'),
-        'config',
-        'lidar_filter.yaml'
-    )
-
+    front_filter_config_file = os.path.join(
+            get_package_share_directory('sllidar_ros2'),
+            'config',
+            'front_lidar_filter.yaml')
+    
+    rear_filter_config_file = os.path.join(
+            get_package_share_directory('sllidar_ros2'),
+            'config',
+            'rear_lidar_filter.yaml')
+    
     return LaunchDescription([
-        DeclareLaunchArgument('channel_type', default_value=channel_type),
-        DeclareLaunchArgument('serial_port', default_value=serial_port),
-        DeclareLaunchArgument('serial_baudrate', default_value=serial_baudrate),
-        DeclareLaunchArgument('frame_id', default_value=frame_id),
-        DeclareLaunchArgument('inverted', default_value=inverted),
-        DeclareLaunchArgument('angle_compensate', default_value=angle_compensate),
-        DeclareLaunchArgument('scan_mode', default_value=scan_mode),
+        DeclareLaunchArgument(
+            'channel_type',
+            default_value=channel_type,
+            description='Specifying channel type of lidar'),
 
-        # LiDAR node: Publishes raw data to /scan_raw
+        DeclareLaunchArgument(
+            'serial_port',
+            default_value=serial_port,
+            description='Specifying usb port to connected lidar'),
+
+        DeclareLaunchArgument(
+            'serial_baudrate',
+            default_value=serial_baudrate,
+            description='Specifying usb port baudrate to connected lidar'),
+        
+        DeclareLaunchArgument(
+            'frame_id',
+            default_value=frame_id,
+            description='Specifying frame_id of lidar'),
+
+        DeclareLaunchArgument(
+            'inverted',
+            default_value=inverted,
+            description='Specifying whether or not to invert scan data'),
+
+        DeclareLaunchArgument(
+            'angle_compensate',
+            default_value=angle_compensate,
+            description='Specifying whether or not to enable angle_compensate of scan data'),
+
+        DeclareLaunchArgument(
+            'scan_mode',
+            default_value=scan_mode,
+            description='Specifying scan mode of lidar'),
+
         Node(
             package='sllidar_ros2',
             executable='sllidar_node',
-            name='sllidar_node',
+            name='front_lidar',
             parameters=[{
-                'channel_type': channel_type,
-                'serial_port': serial_port,
-                'serial_baudrate': serial_baudrate,
-                'frame_id': frame_id,
-                'inverted': inverted,
-                'angle_compensate': angle_compensate,
-                'scan_mode': scan_mode,
-                'queue_size': 10
+                'channel_type': 'serial',
+                'serial_port': '/dev/ttyUSB2',
+                'serial_baudrate': 115200,
+                'frame_id': 'front_laser',
+                'inverted': False,
+                'angle_compensate': True,
+                'scan_mode': 'Standard'
             }],
-            remappings=[('scan', 'scan_raw')],
-            output='screen'
-        ),
-
-        # Laser Scan Filter Node: Takes /scan_raw, outputs filtered data to /scan
-        Node(
-            package='laser_filters',
-            executable='scan_to_scan_filter_chain',
-            name='scan_to_scan_filter_chain',
-            parameters=[filter_config_file],
-            # CHANGED: 'scan_filtered' is now remapped to 'scan'
             remappings=[
-                ('scan', 'scan_raw'), 
-                ('scan_filtered', 'scan')
+                ('/scan', '/front_scan')
             ],
             output='screen'
         ),
-        
-        # Static transforms
+
+        Node(
+            package='sllidar_ros2',
+            executable='sllidar_node',
+            name='rear_lidar',
+            parameters=[{
+                'channel_type': 'serial',
+                'serial_port': '/dev/ttyUSB3',
+                'serial_baudrate': 115200,
+                'frame_id': 'rear_laser',
+                'inverted': False,
+                'angle_compensate': True,
+                'scan_mode': 'Standard'
+            }],
+            remappings=[
+                ('/scan', '/rear_scan')
+            ],
+            output='screen'
+        ),
+
+        Node(
+            package='laser_filters',
+            executable='scan_to_scan_filter_chain',
+            name='front_lidar_filter',              # Matches the YAML root name
+            parameters=[front_filter_config_file],
+            remappings=[
+                ('/scan', '/front_scan'),                  # Subscribes to raw front scan
+                ('/scan_filtered', '/front_scan_filtered') # Publishes the 180-deg front scan
+            ],
+            output='screen'
+        ),
+
+        Node(
+            package='laser_filters',
+            executable='scan_to_scan_filter_chain',
+            name='rear_lidar_filter',               # Matches the YAML root name
+            parameters=[rear_filter_config_file],
+            remappings=[
+                ('/scan', '/rear_scan'),                   # Subscribes to raw rear scan
+                ('/scan_filtered', '/rear_scan_filtered')  # Publishes the 180-deg rear scan
+            ],
+            output='screen'
+        ),
+
+        # Node(
+        #     package='rviz2',
+        #     executable='rviz2',
+        #     name='rviz2',
+        #     arguments=['-d', rviz_config_dir],
+        #     output='screen'),
+            
         Node(
             package='tf2_ros',
             executable='static_transform_publisher',
@@ -92,25 +148,22 @@ def generate_launch_description():
         Node(
             package='tf2_ros',
             executable='static_transform_publisher',
-            name='base_link_to_laser',
-            arguments=['0.385', '0', '-0.08', '0', '0', '0', 'base_link', 'laser']
+            name='base_link_to_front_laser',
+            arguments=['0.370', '0', '-0.035', '0', '0', '0', 'base_link', 'front_laser']
         ),
-
-        # SLAM Toolbox
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(slam_toolbox_launch_file),
-            launch_arguments={
-                'use_sim_time': 'false',
-                'params_file': slam_params_file
-            }.items()
-        ),
-
-        # RViz node
         Node(
-            package='rviz2',
-            executable='rviz2',
-            name='rviz2',
-            arguments=['-d', rviz_config_dir],
-            output='screen'
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='base_link_to_rear_laser',
+            arguments=['-0.38959', '0', '-0.05576', '0.0', '0', '0', 'base_link', 'rear_laser']
         ),
+
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='base_link_to_laser',
+            arguments=['0', '0', '0', '0', '0', '0', 'base_link', 'laser']
+        ),
+
     ])
+

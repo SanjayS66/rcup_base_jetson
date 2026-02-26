@@ -40,7 +40,7 @@ class DeadWheelOdomNode(Node):
         self.declare_parameter('ticks_per_rev_front', 2400)
         self.declare_parameter('ticks_per_rev_left', 2400)
         self.declare_parameter('ticks_per_rev_right', 2400)
-        self.declare_parameter('wheel_radius', 0.03)
+        self.declare_parameter('wheel_radius',0.02938)#0.03
         self.declare_parameter('frame_odom', 'odom')
         self.declare_parameter('frame_base', 'base_link')
         self.declare_parameter('pods', [
@@ -94,7 +94,9 @@ class DeadWheelOdomNode(Node):
         imu_tf.transform.rotation.w = 1.0
         self.static_broadcaster.sendTransform(imu_tf)
 
-        self.create_subscription(String, 'mcu/in', self._mcu_line_cb, 25)
+        self.create_subscription(String, 'mcu/imu', self._imu_cb, 25)
+        self.create_subscription(String, 'mcu/enc', self._enc_cb, 25)
+        self.yaw_offset = None        
         self.yaw_offset = None  
         
 
@@ -105,7 +107,6 @@ class DeadWheelOdomNode(Node):
         if self.prev_ticks is None:
             self.prev_ticks = ticks
             self.prev_time = current_time_sec
-            self.yaw = imu_yaw_rad
             return True
 
         # Calculate dt using the global ROS clock
@@ -139,7 +140,6 @@ class DeadWheelOdomNode(Node):
 
         self.x += step_dx_world
         self.y += step_dy_world
-        self.yaw = imu_yaw_rad
 
         odom = Odometry()
         odom.header.stamp = ros_now
@@ -195,46 +195,30 @@ class DeadWheelOdomNode(Node):
         self.prev_time = current_time_sec
         return True
 
-    def _mcu_line_cb(self, msg: String):
+    def _imu_cb(self, msg: String):
         try:
             data = json.loads(msg.data.strip())
         except json.JSONDecodeError:
             return
 
         ros_now = self.get_clock().now().to_msg()
-
-
-        # 1. Get correct quaternions
-# 1. Get correct quaternions
-        qx = float(data.get("qx", 0.0))
-        qy = float(data.get("qy", 0.0))
-        qz = float(data.get("qz", 0.0))
-        qw = float(data.get("qw", 1.0))
-
-        # 2. Derive raw yaw from quaternions
+        
+        qx, qy, qz, qw = float(data.get("qx", 0.0)), float(data.get("qy", 0.0)), float(data.get("qz", 0.0)), float(data.get("qw", 1.0))
         _, _, raw_yaw = tf_transformations.euler_from_quaternion([qx, qy, qz, qw])
 
-        # 3. Zero-out the initial heading so odometry starts at 0
         if self.yaw_offset is None:
             self.yaw_offset = raw_yaw
             
-        yaw_rad = raw_yaw - self.yaw_offset
+        self.yaw = raw_yaw - self.yaw_offset
 
         try:
             imu_msg = Imu()
             imu_msg.header.stamp = ros_now
             imu_msg.header.frame_id = self.get_parameter('frame_imu').value
-
-            imu_msg.orientation.x = qx
-            imu_msg.orientation.y = qy
-            imu_msg.orientation.z = qz
-            imu_msg.orientation.w = qw
-
+            imu_msg.orientation.x, imu_msg.orientation.y, imu_msg.orientation.z, imu_msg.orientation.w = qx, qy, qz, qw
+            
             imu_msg.angular_velocity.x = math.radians(float(data.get("gx", 0.0)))
             imu_msg.angular_velocity.y = math.radians(float(data.get("gy", 0.0)))
-            
-            # NOTE: Verify if gz is also inverted. If quaternions are correct, 
-            # gz usually is too. If not, negate it here: -float(data.get("gz", 0.0))
             imu_msg.angular_velocity.z = math.radians(float(data.get("gz", 0.0)))
 
             imu_msg.linear_acceleration.x = float(data.get("ax", 0.0))
@@ -242,16 +226,25 @@ class DeadWheelOdomNode(Node):
             imu_msg.linear_acceleration.z = float(data.get("az", 0.0))
 
             imu_msg.orientation_covariance = [1e-9] * 9
-            imu_msg.orientation_covariance[8] = 1e-5  # Yaw orientation (high confidence)
-
+            imu_msg.orientation_covariance[8] = 1e-5  
             imu_msg.angular_velocity_covariance = [1e-9] * 9
-            imu_msg.angular_velocity_covariance[8] = 1e-5  # Z angular velocity
-
-
+            imu_msg.angular_velocity_covariance[8] = 1e-5 
 
             self.imu_pub.publish(imu_msg)
         except Exception as e:
             self.get_logger().warn(f"IMU pub error: {e}")
+
+    def _enc_cb(self, msg: String):
+        try:
+            data = json.loads(msg.data.strip())
+        except json.JSONDecodeError:
+            return
+
+        ros_now = self.get_clock().now().to_msg()
+
+        # If IMU hasn't initialized self.yaw yet, skip encoder update
+        if not hasattr(self, 'yaw') or self.yaw_offset is None:
+            return
 
         try:
             vals = {
@@ -263,7 +256,7 @@ class DeadWheelOdomNode(Node):
             l = vals.get(self.input_map[1], 0)
             r = vals.get(self.input_map[2], 0)
 
-            self._handle_sample(f, l, r, yaw_rad, ros_now)
+            self._handle_sample(f, l, r, self.yaw, ros_now)
         except Exception as e:
             self.get_logger().warn(f"Mapping error: {e}")
 

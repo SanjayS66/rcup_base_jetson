@@ -29,7 +29,7 @@ setup(
             'tracking_dead_wheel_node = interpret_odom.tracking_dead_wheel_odom:main',
             'test_send_recieve_serial_json = interpret_odom.serial_data_send_recieve_test:main', 
             'serial_arbiter = interpret_odom.serial_arbiter:main',
-            
+            'zed_dynamic_link = interpret_odom.zed_dynamic_link:main'
             ],
     },
 )

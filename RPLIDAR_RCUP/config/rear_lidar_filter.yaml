@@ -1,0 +1,9 @@
+rear_lidar_filter:
+  ros__parameters:
+    use_sensor_data_qos: true
+    filter1:
+      name: keep_rear_hemisphere
+      type: laser_filters/LaserScanAngularBoundsFilterInPlace
+      params:
+        lower_angle: -1.4835  # -85 degrees
+        upper_angle: 1.4835   # +85 degrees

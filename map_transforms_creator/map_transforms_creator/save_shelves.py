@@ -55,7 +55,7 @@ def main():
 
     # 1. Start spinning in the background so the TF buffer can fill
     # We use a loop to give it a few tries
-    max_tries = 10
+    max_tries = 50
     found = False
     
     node.get_logger().info(f"Waiting for transform 'map' -> 'base_link'...")

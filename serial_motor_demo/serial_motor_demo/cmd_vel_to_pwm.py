@@ -26,7 +26,7 @@ class JoyToCmdVelJoy(Node):
         self.declare_parameter('cmd_vel_topic', '/cmd_vel_joy')
         self.declare_parameter('axis_vx', 1)
         self.declare_parameter('axis_vy', 0)
-        self.declare_parameter('axis_wz', 2)
+        self.declare_parameter('axis_wz', 3)
         self.declare_parameter('scale_vx', 1.0)
         self.declare_parameter('scale_vy', 1.0)
         self.declare_parameter('scale_wz', 1.0)
@@ -34,7 +34,7 @@ class JoyToCmdVelJoy(Node):
         self.declare_parameter('publish_rate', 30.0)
 
         # brake uses a button index in the buttons array
-        self.declare_parameter('brake_button', 7)  # 8th element => index 7
+        self.declare_parameter('brake_button', 5)  # 8th element => index 7
 
         joy_topic = self.get_parameter('joy_topic').get_parameter_value().string_value
         cmd_topic = self.get_parameter('cmd_vel_topic').get_parameter_value().string_value
