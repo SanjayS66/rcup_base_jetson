@@ -76,7 +76,7 @@ def generate_launch_description():
             name='front_lidar',
             parameters=[{
                 'channel_type': 'serial',
-                'serial_port': '/dev/ttyUSB2',
+                'serial_port': '/dev/ttyUSB0',
                 'serial_baudrate': 115200,
                 'frame_id': 'front_laser',
                 'inverted': False,
@@ -95,7 +95,7 @@ def generate_launch_description():
             name='rear_lidar',
             parameters=[{
                 'channel_type': 'serial',
-                'serial_port': '/dev/ttyUSB3',
+                'serial_port': '/dev/ttyUSB1',
                 'serial_baudrate': 115200,
                 'frame_id': 'rear_laser',
                 'inverted': False,

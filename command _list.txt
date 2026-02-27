@@ -1,0 +1,67 @@
+# SSH ing into the jetson
+ssh rm@rm-desktop.local
+
+#check xbox v=controller battery:
+bluetoothctl info 0C:35:26:CB:E0:2C
+
+#network priority and auto connect use : 
+nmcli connection modify "WiFi_Name" connection.autoconnect-priority 999
+
+
+
+
+ros2 launch interpret_odom navigation_support_nodes.launch.py
+
+ ros2 run interpret_odom tracking_dead_wheel_node
+
+ros2 run serial_motor_demo OpenLoop_controller 
+
+ros2 launch interpret_odom mapping.launch.py mode:=mapping
+
+ros2 launch interpret_odom hardware.launch.py
+
+
+SAVING MAP :
+ros2 service call /slam_toolbox/serialize_map slam_toolbox/srv/SerializePoseGraph "{filename: '/home/rm/base_2025_ws/rcup_maps/mymap'}"
+ros2 service call /slam_toolbox/save_map slam_toolbox/srv/SaveMap "{name: {data: \"/home/rm/base_2025_ws/rcup_maps/mymap\"}}"
+
+NAV2_JETSON  :
+1.LOCALISATION
+ros2 launch interpret_odom mapping.launch.py mode:=localization map_file:=/home/rm/base_2025_ws/rcup_maps/mymap
+
+2.NAVIGATION :
+ros2 launch nav2_bringup navigation_launch.py   map:=/home/rm/base_2025_ws/rcup_maps/mymap.yaml   params_file:=/home/rm/base_2025_ws/src/interpret_odom/config/nav2_params.yaml   autostart:=True   use_sim_time:=False   use_composition:=False   use_respawn:=True
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+OLD COMMANDS :
+
+
+
+when map is done:
+# ros2 run nav2_map_server map_saver_cli -f /home/rm/base_2025_ws/test_map
+
+
+nav2:
+
+ros2 launch interpret_odom mapping.launch.py mode:=localization map_file:=/home/sanjay/rcup_maps/myserialmap
+
+ ros2 launch nav2_bringup navigation_launch.py   map:=/home/sanjay/rcup_maps/mymap.yaml   params_file:=/home/sanjay/ros2_workspaces/base_ws/src/interpret_odom/config/nav2_params.yaml   autostart:=True   use_sim_time:=False   use_composition:=False   use_respawn:=True
+ 
+ ros2 launch interpret_odom nav2_bringup_with_collision_monitor.launch.py map:=/home/sanjay/rcup_maps/mymap.yaml params_file:=/home/sanjay/ros2_workspaces/base_ws/src/interpret_odom/config/nav2_params.yaml use_sim_time:=False use_composition:=False   use_respawn:=True autostart:=True

@@ -60,7 +60,7 @@ def generate_launch_description():
         include_merger,
         
         # Your specific nodes
-        # zed_link, # Uncomment if needed
+        zed_link, # Uncomment if needed
         
         TimerAction(
             period=3.0, 
