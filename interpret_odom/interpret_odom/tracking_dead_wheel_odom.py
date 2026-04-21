@@ -48,7 +48,7 @@ class DeadWheelOdomNode(Node):
             -0.04, 0.07, 0.0,
             -0.045, -0.074, 0.0
         ])
-        self.declare_parameter('inputs_front_left_right', ['c', 'a', 'b'])
+        self.declare_parameter('inputs_front_left_right', ['a', 'c', 'b'])
         self.declare_parameter('encoder_signs', [1, -1, 1])
         self.declare_parameter('frame_imu', 'imu_link')
         self.declare_parameter('imu_offset_x', -0.095)

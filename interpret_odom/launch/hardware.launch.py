@@ -51,6 +51,13 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(merger_launch_path)
     )
 
+
+
+    # Stagger the merger until both LiDARs are running
+    delayed_merger = TimerAction(
+        period=10.0,
+        actions=[include_merger]
+    )
     # --- Return Launch Description ---
     return LaunchDescription([
         SetEnvironmentVariable('RCUTILS_LOGGING_BUFFERED_STREAM', '1'),
@@ -63,7 +70,7 @@ def generate_launch_description():
         zed_link, # Uncomment if needed
         
         TimerAction(
-            period=3.0, 
+            period=15.0, 
             actions=[foxglove_node]
         )
     ])

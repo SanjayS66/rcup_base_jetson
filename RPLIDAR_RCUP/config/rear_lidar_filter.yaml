@@ -5,5 +5,13 @@ rear_lidar_filter:
       name: keep_rear_hemisphere
       type: laser_filters/LaserScanAngularBoundsFilterInPlace
       params:
-        lower_angle: -1.4835  # -85 degrees
-        upper_angle: 1.4835   # +85 degrees
+        lower_angle: -1.4835
+        upper_angle: 1.4835
+    filter2:
+      name: speckle_filter
+      type: laser_filters/LaserScanSpeckleFilter
+      params:
+        filter_type: 1              # 1 = Radius Outlier mode
+        max_range: 10.0              # Max distance to consider for filtering
+        max_range_difference: 0.25  # Search radius
+        filter_window: 3            # Minimum neighbors required

@@ -10,8 +10,8 @@ def generate_launch_description():
             parameters=[{
                 # Node configuration
                 'frequency': 30.0,            # Frequency of the processing loop [Hz]
-                'frame_id': 'laser',          # Coordinate frame of the published lines [string]
-                'scan_topic': 'scan_raw',      # Topic name to subscribe to for LaserScan [string]
+                'frame_id': 'front_laser',          # Coordinate frame of the published lines [string]
+                'scan_topic': 'front_scan_filtered',      # Topic name to subscribe to for LaserScan [string]
                 'publish_markers': True,       # Enable/disable visualization_msgs/Marker output [bool]
 
                 # Sensor uncertainty parameters
@@ -24,7 +24,7 @@ def generate_launch_description():
 
                 # Geometric extraction constraints
                 'max_line_gap': 0.5,           # Max distance between points to stay in the same line [m] [cite: 1]
-                'min_line_length': 0.4,        # Minimum length for a line to be valid [m] [cite: 1]
+                'min_line_length': 0.3,        # Minimum length for a line to be valid [m] [cite: 1]
                 'min_range': 0.05,              # Ignore points closer than this distance [m] [cite: 1]
                 'max_range': 250.0,            # Ignore points farther than this distance [m] [cite: 1]
                 'min_split_dist': 0.04,        # Max distance a point can be from a line before splitting [m] [cite: 1]

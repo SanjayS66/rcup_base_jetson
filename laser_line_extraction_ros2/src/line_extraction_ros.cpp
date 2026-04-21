@@ -18,9 +18,9 @@ LineExtractionROS::LineExtractionROS() : Node("line_extraction_node"), data_cach
 
 void LineExtractionROS::loadParameters()
 {
-  this->declare_parameter<std::string>("frame_id", "laser");
-  this->declare_parameter<std::string>("scan_topic", "scan");
-  this->declare_parameter<bool>("publish_markers", false);
+  this->declare_parameter<std::string>("frame_id", "front_laser");
+  this->declare_parameter<std::string>("scan_topic", "front_scan_filtered");
+  this->declare_parameter<bool>("publish_markers", true);
   this->declare_parameter<double>("bearing_std_dev", 1e-3);
   this->declare_parameter<double>("range_std_dev", 0.02);
   this->declare_parameter<double>("least_sq_angle_thresh", 1e-4);
@@ -82,7 +82,10 @@ void LineExtractionROS::cacheData(const sensor_msgs::msg::LaserScan::SharedPtr s
 {
   std::vector<double> bearings, cos_bearings, sin_bearings;
   std::vector<unsigned int> indices;
-  const std::size_t num_measurements = std::ceil((scan_msg->angle_max - scan_msg->angle_min) / scan_msg->angle_increment);
+  
+  // Use the exact array size to prevent out-of-bounds access
+  const std::size_t num_measurements = scan_msg->ranges.size(); 
+  
   for (std::size_t i = 0; i < num_measurements; ++i)
   {
     const double b = scan_msg->angle_min + i * scan_msg->angle_increment;

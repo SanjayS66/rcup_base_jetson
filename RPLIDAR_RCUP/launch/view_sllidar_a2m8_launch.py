@@ -8,7 +8,7 @@ from launch.actions import DeclareLaunchArgument
 from launch.actions import LogInfo
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
-
+from launch.actions import TimerAction # <-- Add this line
 
 def generate_launch_description():
     channel_type =  LaunchConfiguration('channel_type', default='serial')
@@ -35,6 +35,8 @@ def generate_launch_description():
             'rear_lidar_filter.yaml')
     
     return LaunchDescription([
+
+
         DeclareLaunchArgument(
             'channel_type',
             default_value=channel_type,
@@ -70,13 +72,40 @@ def generate_launch_description():
             default_value=scan_mode,
             description='Specifying scan mode of lidar'),
 
+
+                Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='base_footprint_to_base_link',
+            arguments=['0', '0', '0', '0', '0', '0', 'base_footprint', 'base_link']
+        ),
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='base_link_to_front_laser',
+            arguments=['0.370', '0', '-0.035', '0', '0', '0', 'base_link', 'front_laser']
+        ),
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='base_link_to_rear_laser',
+            arguments=['-0.38959', '0', '-0.05576', '0.0', '0', '0', 'base_link', 'rear_laser']
+        ),
+
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='base_link_to_laser',
+            arguments=['0', '0', '0', '0', '0', '0', 'base_link', 'laser']
+        ),
+
         Node(
             package='sllidar_ros2',
             executable='sllidar_node',
             name='front_lidar',
             parameters=[{
                 'channel_type': 'serial',
-                'serial_port': '/dev/ttyUSB0',
+                'serial_port': '/dev/front_lidar',
                 'serial_baudrate': 115200,
                 'frame_id': 'front_laser',
                 'inverted': False,
@@ -89,23 +118,28 @@ def generate_launch_description():
             output='screen'
         ),
 
-        Node(
-            package='sllidar_ros2',
-            executable='sllidar_node',
-            name='rear_lidar',
-            parameters=[{
-                'channel_type': 'serial',
-                'serial_port': '/dev/ttyUSB1',
-                'serial_baudrate': 115200,
-                'frame_id': 'rear_laser',
-                'inverted': False,
-                'angle_compensate': True,
-                'scan_mode': 'Standard'
-            }],
-            remappings=[
-                ('/scan', '/rear_scan')
-            ],
-            output='screen'
+        TimerAction(
+            period=5.0,
+            actions=[
+                Node(
+                    package='sllidar_ros2',
+                    executable='sllidar_node',
+                    name='rear_lidar',
+                    parameters=[{
+                        'channel_type': 'serial',
+                        'serial_port': '/dev/rear_lidar',
+                        'serial_baudrate': 115200,
+                        'frame_id': 'rear_laser',
+                        'inverted': True,
+                        'angle_compensate': True,
+                        'scan_mode': 'Standard'
+                    }],
+                    remappings=[
+                        ('/scan', '/rear_scan')
+                    ],
+                    output='screen'
+                )
+            ]
         ),
 
         Node(
@@ -132,38 +166,5 @@ def generate_launch_description():
             output='screen'
         ),
 
-        # Node(
-        #     package='rviz2',
-        #     executable='rviz2',
-        #     name='rviz2',
-        #     arguments=['-d', rviz_config_dir],
-        #     output='screen'),
-            
-        Node(
-            package='tf2_ros',
-            executable='static_transform_publisher',
-            name='base_footprint_to_base_link',
-            arguments=['0', '0', '0', '0', '0', '0', 'base_footprint', 'base_link']
-        ),
-        Node(
-            package='tf2_ros',
-            executable='static_transform_publisher',
-            name='base_link_to_front_laser',
-            arguments=['0.370', '0', '-0.035', '0', '0', '0', 'base_link', 'front_laser']
-        ),
-        Node(
-            package='tf2_ros',
-            executable='static_transform_publisher',
-            name='base_link_to_rear_laser',
-            arguments=['-0.38959', '0', '-0.05576', '0.0', '0', '0', 'base_link', 'rear_laser']
-        ),
-
-        Node(
-            package='tf2_ros',
-            executable='static_transform_publisher',
-            name='base_link_to_laser',
-            arguments=['0', '0', '0', '0', '0', '0', 'base_link', 'laser']
-        ),
 
     ])
-

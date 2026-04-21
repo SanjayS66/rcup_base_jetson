@@ -13,24 +13,24 @@ class CmdvelToMcu(Node):
         # --- Parameters ---
         self.declare_parameter('wheel_L', 0.305)
         self.declare_parameter('wheel_W', 0.2175)
-        self.declare_parameter('max_pwm', 19)
+        self.declare_parameter('max_pwm', 30)
         self.declare_parameter('scale_factor', 100.0)
-        self.declare_parameter('min_pwm_threshold_normal', 16)
-        self.declare_parameter('min_pwm_threshold_strafe', 28)
+        self.declare_parameter('min_pwm_threshold_normal', 20)
+        self.declare_parameter('min_pwm_threshold_strafe', 26)
         self.declare_parameter('ramp_step', 12) 
-        self.declare_parameter('strafe_gain', 1.8) 
+        self.declare_parameter('strafe_gain', 1.6) 
         self.declare_parameter('idle_timeout', 0.05)
         self.declare_parameter('cmd_vel_in_topic', 'cmd_vel_out')
         self.declare_parameter('mcu_out_topic', 'mcu/out')
         
         # --- DYNAMIC BRAKING PARAMETERS ---
-        self.declare_parameter('brake_duration_normal', 0.0)   # Duration for linear
-        self.declare_parameter('brake_duration_rotation', 0.0) # Duration for turns
+        self.declare_parameter('brake_duration_normal', 0.28)   # Duration for linear
+        self.declare_parameter('brake_duration_rotation', 0.20) # Duration for turns
         
         self.declare_parameter('brake_scale_normal', 0.8)   
         self.declare_parameter('brake_scale_rotation', 0.3) 
         
-        self.declare_parameter('brake_min_pwm', 15)         
+        self.declare_parameter('brake_min_pwm', 17)         
         self.declare_parameter('brake_max_pwm', 30)         
 
         # Load Params
